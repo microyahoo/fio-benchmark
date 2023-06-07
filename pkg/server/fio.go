@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -179,22 +180,21 @@ func (s *FioServer) printResults(outputFile, format string) {
 		t.SetOutputMirror(os.Stdout)
 	}
 	t.AppendHeader(table.Row{ //"job",
-		"filename", "numjobs", "runtime", "ioengine", "direct", "verify", "blocksize", "iodepth", "rw",
+		"filename", "rw", "numjobs", "runtime", "direct", "blocksize", "iodepth",
 		"read-iops-mean", "read-bw-mean(KiB/s)", "latency-read-min(us)", "latency-read-max(us)", "latency-read-mean(us)", "read-stddev(us)",
-		"write-iops-mean", "write-bw-mean(KiB/s)", "latency-write-min(us)", "latency-write-max(us)", "latency-write-mean(us)", "latency-write-stddev(us)"})
+		"write-iops-mean", "write-bw-mean(KiB/s)", "latency-write-min(us)", "latency-write-max(us)", "latency-write-mean(us)", "latency-write-stddev(us)",
+		"ioengine", "verify"})
 	for _, result := range s.results {
 		for _, job := range result.Jobs {
 			t.AppendRow(table.Row{
 				// job.JobName,
 				job.JobOptions.FileName,
+				job.JobOptions.RW,
 				job.JobOptions.NumJobs,
 				job.JobOptions.Runtime,
-				job.JobOptions.IOEngine,
 				job.JobOptions.Direct,
-				job.JobOptions.Verify,
 				job.JobOptions.BlockSize,
 				job.JobOptions.IODepth,
-				job.JobOptions.RW,
 				job.ReadResult.IOPSMean,
 				job.ReadResult.BWMean,
 				job.ReadResult.LatencyNs.Min / 1000,
@@ -207,6 +207,8 @@ func (s *FioServer) printResults(outputFile, format string) {
 				job.WriteResult.LatencyNs.Max / 1000,
 				job.WriteResult.LatencyNs.Mean / 1000,
 				job.WriteResult.LatencyNs.Stddev / 1000,
+				job.JobOptions.IOEngine,
+				job.JobOptions.Verify,
 			})
 		}
 		t.AppendSeparator()
@@ -216,8 +218,24 @@ func (s *FioServer) printResults(outputFile, format string) {
 			Name: "filename",
 			Mode: table.Asc,
 		},
+		{
+			Name: "numjobs",
+			Mode: table.Asc,
+		},
+		{
+			Name: "iodepth",
+			Mode: table.Asc,
+		},
+		{
+			Name: "rw",
+			Mode: table.Asc,
+		},
+		{
+			Name: "blocksize",
+			Mode: table.Asc,
+		},
 	})
-	switch format {
+	switch strings.ToLower(format) {
 	case "md", "markdown":
 		t.RenderMarkdown()
 	case "csv":
