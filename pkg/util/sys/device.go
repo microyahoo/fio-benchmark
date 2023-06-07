@@ -55,8 +55,27 @@ type Partition struct {
 type LocalDevice struct {
 	// Name is the device name
 	Name string `json:"name"`
-	// Parent is the device parent's name
-	Parent string `json:"parent"`
+
+	// Parents is the device parents' name
+	// ~/go/src/deeproute.ai/fio-benchmark (main ✗) lsblk
+	// NAME            MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+	// sr0              11:0    1 1024M  0 rom
+	// vda             252:0    0  200G  0 disk
+	// ├─vda1          252:1    0    1G  0 part /boot
+	// ├─vda2          252:2    0   59G  0 part
+	// │ ├─centos-root 253:0    0  193G  0 lvm  /
+	// │ └─centos-swap 253:1    0    6G  0 lvm
+	// ├─vda3          252:3    0   40G  0 part
+	// │ └─centos-root 253:0    0  193G  0 lvm  /
+	// └─vda4          252:4    0  100G  0 part
+	//   └─centos-root 253:0    0  193G  0 lvm  /
+	// vdb             252:16   0   50G  0 disk
+	// vdc             252:32   0   50G  0 disk
+	// vdd             252:48   0   50G  0 disk
+	// └─vdd1          252:49   0   50G  0 part
+	//   └─centos-root 253:0    0  193G  0 lvm  /
+	Parents []string `json:"parents"`
+
 	// HasChildren is whether the device has a children device
 	HasChildren bool `json:"has_children"`
 	// DevLinks is the persistent device path on the host

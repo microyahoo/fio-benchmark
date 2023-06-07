@@ -41,7 +41,7 @@ func supportedDeviceType(device string) bool {
 
 // GetDeviceEmpty check whether a device is completely empty
 func GetDeviceEmpty(device *LocalDevice) bool {
-	return device.Parent == "" && supportedDeviceType(device.Type) && len(device.Partitions) == 0 && device.Filesystem == ""
+	return len(device.Parents) == 0 && supportedDeviceType(device.Type) && len(device.Partitions) == 0 && device.Filesystem == ""
 }
 
 func ignoreDevice(d string) bool {
@@ -58,12 +58,19 @@ func DiscoverDevices(executor exec.Executor) (map[string]*LocalDevice, error) {
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(output))
-	deviceProps := make(map[string]map[string]string) // name -> map[key]value
+
+	// ~/go/src/(main ✗) lsblk --all --bytes --pairs --paths --output SIZE,ROTA,RO,TYPE,PKNAME,NAME,KNAME,UUID,WWN,MOUNTPOINT | grep root
+	// SIZE="207215394816" ROTA="1" RO="0" TYPE="lvm" PKNAME="/dev/vda2" NAME="/dev/mapper/centos-root" KNAME="/dev/dm-0" UUID="5e322b94-4141-4a15-ae29-4136ae9c2e15" WWN="" MOUNTPOINT="/"
+	// SIZE="207215394816" ROTA="1" RO="0" TYPE="lvm" PKNAME="/dev/vda3" NAME="/dev/mapper/centos-root" KNAME="/dev/dm-0" UUID="5e322b94-4141-4a15-ae29-4136ae9c2e15" WWN="" MOUNTPOINT="/"
+	// SIZE="207215394816" ROTA="1" RO="0" TYPE="lvm" PKNAME="/dev/vda4" NAME="/dev/mapper/centos-root" KNAME="/dev/dm-0" UUID="5e322b94-4141-4a15-ae29-4136ae9c2e15" WWN="" MOUNTPOINT="/"
+	// SIZE="207215394816" ROTA="1" RO="0" TYPE="lvm" PKNAME="/dev/vdd1" NAME="/dev/mapper/centos-root" KNAME="/dev/dm-0" UUID="5e322b94-4141-4a15-ae29-4136ae9c2e15" WWN="" MOUNTPOINT="/"
+	deviceProps := make(map[string][]map[string]string) // name -> []map[key]value
 	for scanner.Scan() {
 		props := parseKeyValuePairString(scanner.Text())
 		// NOTE: name maybe prefix with /dev/ or /dev/mapper/
 		if len(props) > 0 {
-			deviceProps[props["NAME"]] = props
+			name := props["NAME"]
+			deviceProps[name] = append(deviceProps[name], props)
 		}
 	}
 	if scanner.Err() != nil {
@@ -119,9 +126,8 @@ func DiscoverDevices(executor exec.Executor) (map[string]*LocalDevice, error) {
 		disks[name] = disk
 	}
 	for _, d := range disks {
-		for d.IsRoot && d.Parent != "" {
-			d = disks[d.Parent]
-			d.IsRoot = true
+		if d.IsRoot && len(d.Parents) > 0 {
+			setRoot(d, disks)
 		}
 	}
 	klog.V(5).Infof("discovered disks are:")
@@ -132,64 +138,77 @@ func DiscoverDevices(executor exec.Executor) (map[string]*LocalDevice, error) {
 	return disks, nil
 }
 
+func setRoot(disk *LocalDevice, disks map[string]*LocalDevice) {
+	for _, p := range disk.Parents {
+		parent := disks[p]
+		parent.IsRoot = true
+		setRoot(parent, disks)
+	}
+}
+
 // PopulateDeviceInfo returns the information of the specified block device
-func PopulateDeviceInfo(diskProps map[string]string) (*LocalDevice, error) {
-	if diskProps == nil {
+func PopulateDeviceInfo(props []map[string]string) (*LocalDevice, error) {
+	if len(props) == 0 {
 		return nil, errors.New("disk properties is empty")
 	}
 
-	diskType, ok := diskProps["TYPE"]
-	if !ok {
-		return nil, errors.New("diskType is empty")
-	}
-	if !supportedDeviceType(diskType) {
-		return nil, fmt.Errorf("unsupported diskType %+s", diskType)
-	}
+	var device *LocalDevice
+	for i, deviceProps := range props {
+		diskType, ok := deviceProps["TYPE"]
+		if !ok {
+			return nil, errors.New("diskType is empty")
+		}
+		if !supportedDeviceType(diskType) {
+			return nil, fmt.Errorf("unsupported diskType %+s", diskType)
+		}
+		name := deviceProps["NAME"]
+		if i == 0 {
+			device = &LocalDevice{Name: name}
 
-	disk := &LocalDevice{Name: diskProps["NAME"]}
+			if val, ok := deviceProps["UUID"]; ok {
+				device.UUID = val
+			}
+			if val, ok := deviceProps["MOUNTPOINT"]; ok {
+				device.MountPoint = val
+				if val == SystemRootPath ||
+					os.Getenv(SmdInContainer) == "true" && val == SystemRootfsPath {
+					device.IsRoot = true
+				}
+			}
 
-	if val, ok := diskProps["UUID"]; ok {
-		disk.UUID = val
-	}
-	if val, ok := diskProps["MOUNTPOINT"]; ok {
-		disk.MountPoint = val
-		if val == SystemRootPath ||
-			os.Getenv(SmdInContainer) == "true" && val == SystemRootfsPath {
-			disk.IsRoot = true
+			if val, ok := deviceProps["TYPE"]; ok {
+				device.Type = val
+			}
+			if val, ok := deviceProps["SIZE"]; ok {
+				if size, err := strconv.ParseUint(val, 10, 64); err == nil {
+					device.Size = size
+				}
+			}
+			if val, ok := deviceProps["ROTA"]; ok {
+				if rotates, err := strconv.ParseBool(val); err == nil {
+					device.Rotational = rotates
+				}
+			}
+			if val, ok := deviceProps["RO"]; ok {
+				if ro, err := strconv.ParseBool(val); err == nil {
+					device.Readonly = ro
+				}
+			}
+			if val, ok := deviceProps["NAME"]; ok {
+				device.RealPath = val
+			}
+			if val, ok := deviceProps["KNAME"]; ok {
+				device.KernelName = val
+			}
+		}
+		if val, ok := deviceProps["PKNAME"]; ok {
+			if val != "" {
+				device.Parents = append(device.Parents, val)
+			}
 		}
 	}
-
-	if val, ok := diskProps["TYPE"]; ok {
-		disk.Type = val
-	}
-	if val, ok := diskProps["SIZE"]; ok {
-		if size, err := strconv.ParseUint(val, 10, 64); err == nil {
-			disk.Size = size
-		}
-	}
-	if val, ok := diskProps["ROTA"]; ok {
-		if rotates, err := strconv.ParseBool(val); err == nil {
-			disk.Rotational = rotates
-		}
-	}
-	if val, ok := diskProps["RO"]; ok {
-		if ro, err := strconv.ParseBool(val); err == nil {
-			disk.Readonly = ro
-		}
-	}
-	if val, ok := diskProps["PKNAME"]; ok {
-		if val != "" {
-			disk.Parent = val
-		}
-	}
-	if val, ok := diskProps["NAME"]; ok {
-		disk.RealPath = val
-	}
-	if val, ok := diskProps["KNAME"]; ok {
-		disk.KernelName = val
-	}
-
-	return disk, nil
+	klog.Infof("device name: %s, parents: %v", device.Name, device.Parents)
+	return device, nil
 }
 
 // PopulateDeviceUdevInfo fills the udev info into the block device information
