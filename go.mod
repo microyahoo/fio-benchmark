@@ -3,6 +3,7 @@ module github.com/microyahoo/fio-benchmark
 go 1.19
 
 require (
+	github.com/go-echarts/go-echarts/v2 v2.2.6
 	github.com/google/uuid v1.3.0
 	github.com/jedib0t/go-pretty/v6 v6.4.6
 	github.com/json-iterator/go v1.1.12
