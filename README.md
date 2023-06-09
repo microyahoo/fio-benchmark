@@ -71,7 +71,9 @@ fio_settings:
   - randwrite
   - rw
   - randrw
-  # filename: /dev/vdb # device name or file name, which can be ignore if specify `use_all_disks`
+  filename: # device name or file name, which can be ignore if specify `use_all_disks`
+  # - /dev/sdb
+  # - /dev/sdc
 use_all_disks: true # except root disk
 workers: 8 # It is recommended to be less than or equal to the number of disks
 ```

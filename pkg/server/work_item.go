@@ -42,17 +42,16 @@ type WorkQueue struct {
 }
 
 func NewWorkQueue(s *TestSettings, executor exec.Executor) (*WorkQueue, error) {
-	var queue map[string][]*WorkItem
 	fs := s.FioSettings
-	if fs.FileName != "" {
-		queue = make(map[string][]*WorkItem, 1)
+	queue := make(map[string][]*WorkItem)
+	for _, fileName := range fs.FileName {
 		var items []*WorkItem
 		for _, job := range fs.NumJobs {
 			for _, bs := range fs.BlockSize {
 				for _, depth := range fs.IODepth {
 					for _, rw := range fs.RW {
 						item := &WorkItem{
-							FileName:  fs.FileName,
+							FileName:  fileName,
 							NumJobs:   job,
 							BlockSize: bs,
 							IODepth:   depth,
@@ -67,7 +66,11 @@ func NewWorkQueue(s *TestSettings, executor exec.Executor) (*WorkQueue, error) {
 				}
 			}
 		}
-		queue[fs.FileName] = items
+		if len(items) > 0 {
+			queue[fileName] = items
+		}
+	}
+	if len(queue) > 0 {
 		return &WorkQueue{queue}, nil
 	}
 	if !s.UseAllDisks {
@@ -77,7 +80,6 @@ func NewWorkQueue(s *TestSettings, executor exec.Executor) (*WorkQueue, error) {
 	if err != nil {
 		return nil, err
 	}
-	queue = make(map[string][]*WorkItem, len(devices)-1) // exclude root disk
 	for _, d := range devices {
 		if d.Type != sys.DiskType || d.Bus == sys.DiskBusUsb || d.IsRoot {
 			continue

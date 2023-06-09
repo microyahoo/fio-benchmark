@@ -22,7 +22,7 @@ type FioSettings struct {
 	Runtime   uint64   `yaml:"runtime"`  // seconds
 	IODepth   []int32  `yaml:"iodepth"`  // 1, 2, 4, 8, 16, 32, 64, 128
 	RW        []string `yaml:"rw"`       // read, write, randread, randwrite, rw, randrw
-	FileName  string   `yaml:"filename"` // device name or file name, which can be ignore if specify `use_all_disk`
+	FileName  []string `yaml:"filename"` // device name or file name, which can be ignore if specify `use_all_disk`
 }
 
 func ParseSettings(cfgFile string) (*TestSettings, error) {
@@ -35,7 +35,7 @@ func ParseSettings(cfgFile string) (*TestSettings, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !settings.UseAllDisks && settings.FioSettings.FileName == "" {
+	if !settings.UseAllDisks && len(settings.FioSettings.FileName) == 0 {
 		return nil, errors.Errorf("filename or userAllDisks should be specified")
 	}
 	if settings.FioSettings == nil {
