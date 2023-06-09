@@ -12,6 +12,7 @@ import (
 	"github.com/go-echarts/go-echarts/v2/charts"
 	"github.com/go-echarts/go-echarts/v2/components"
 	"github.com/go-echarts/go-echarts/v2/opts"
+	"github.com/google/uuid"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"k8s.io/klog/v2"
 
@@ -26,6 +27,7 @@ const (
 type ServerOptions struct {
 	jobFile      string
 	cfgFile      string
+	chartFile    string
 	outputFile   string
 	dryrun       bool
 	renderFormat string
@@ -36,6 +38,12 @@ type ServerOption func(*ServerOptions)
 func WithJobFile(jobFile string) ServerOption {
 	return func(opts *ServerOptions) {
 		opts.jobFile = jobFile
+	}
+}
+
+func WithChartFile(chartFile string) ServerOption {
+	return func(opts *ServerOptions) {
+		opts.chartFile = chartFile
 	}
 }
 
@@ -71,6 +79,7 @@ type FioServer struct {
 
 	jobFile    string // TODO: not support
 	cfgFile    string
+	chartFile  string
 	outputFile string
 
 	wg          *sync.WaitGroup
@@ -98,6 +107,7 @@ func NewFioServer(options ...ServerOption) (*FioServer, error) {
 		Executor:     &exec.CommandExecutor{},
 		jobFile:      opts.jobFile,
 		cfgFile:      opts.cfgFile,
+		chartFile:    opts.chartFile,
 		outputFile:   opts.outputFile,
 		renderFormat: opts.renderFormat,
 		dryrun:       opts.dryrun,
@@ -235,7 +245,13 @@ func (s *FioServer) renderCharts() {
 			}
 		}
 	}
-	f, err := os.Create("charts.html")
+	chartFile := s.chartFile
+	if chartFile == "" {
+		chartFile = fmt.Sprintf("chart-%s.html", uuid.NewString())
+	} else if !strings.HasSuffix(chartFile, "html") {
+		chartFile = fmt.Sprintf("%s.html", chartFile)
+	}
+	f, err := os.Create(chartFile)
 	if err != nil {
 		panic(err)
 	}

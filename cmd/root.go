@@ -13,9 +13,10 @@ import (
 
 // fioBenchmarkOptions defines the options of fio benchmark
 type fioBenchmarkOptions struct {
-	jobFile      string
+	jobFile      string // TODO
 	cfgFile      string
 	outputFile   string
+	chartFile    string
 	dryrun       bool
 	renderFormat string
 }
@@ -47,6 +48,7 @@ func NewFioCommand() *cobra.Command {
 	cmds.Flags().StringVar(&o.outputFile, "output-file", "", "redirect fio benchmark result to output file")
 	cmds.Flags().StringVar(&o.renderFormat, "render-format", "", "redirect fio benchmark result to output file with rendered format, eg. table, html, markdown, csv")
 	cmds.Flags().StringVar(&o.cfgFile, "config-file", "", "fio benchmark config file, which will be ignored if job file is specified")
+	cmds.Flags().StringVar(&o.chartFile, "chart-file", "", "echarts file for fio benchmark result")
 	cmds.Flags().BoolVar(&o.dryrun, "dryrun", true, "dry-run")
 
 	cmds.AddCommand(versionCmd)
@@ -62,6 +64,7 @@ func (o *fioBenchmarkOptions) Run(stopCh <-chan struct{}) error {
 	server, err := server.NewFioServer(
 		server.WithJobFile(o.jobFile),
 		server.WithCfgFile(o.cfgFile),
+		server.WithChartFile(o.chartFile),
 		server.WithOutputFile(o.outputFile),
 		server.WithRenderFormat(o.renderFormat),
 		server.WithDryrun(o.dryrun))

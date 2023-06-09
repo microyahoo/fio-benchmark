@@ -31,6 +31,7 @@ bin/fio-benchmark -h
 | --output-file   | redirect fio benchmark result to output file                                                     |
 | --render-format | redirect fio benchmark result to output file with rendered format, eg. table, html, markdown, csv|
 | --config-file   | fio benchmark config file                                                                        |
+| --chart-file    | echarts file for fio benchmark result                                                            |
 | --dryrun        | dry-run (default true)                                                                           |
 | --v             | number for the log level verbosity                                                               |
 
