@@ -77,6 +77,7 @@ workers: 8 # It is recommended to be less than or equal to the number of disks
 ```
 
 ## Output
+The output format supports table, csv, markdown and html, as shown below is the markdown output.
 | filename | rw | numjobs | runtime | direct | blocksize | iodepth | read-iops-mean | read-bw-mean(KiB/s) | latency-read-min(us) | latency-read-max(us) | latency-read-mean(us) | read-stddev(us) | write-iops-mean | write-bw-mean(KiB/s) | latency-write-min(us) | latency-write-max(us) | latency-write-mean(us) | latency-write-stddev(us) | ioengine | verify |
 | --- | --- | --- | --- | --- | --- | --- | ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:| --- | --- |
 | /dev/vdb | randread | 1 | 10s | 1 | 4K | 1 | 1293.736842 | 5175 | 331 | 11699 | 767.447327868 | 570.548890303 | 0 | 0 | 0 | 0 | 0 | 0 | libaio |  |
@@ -103,3 +104,23 @@ workers: 8 # It is recommended to be less than or equal to the number of disks
 | /dev/vdb | randread | 8 | 10s | 1 | 4M | 8 | 545.9 | 2.2406038e+06 | 22207 | 554612 | 116589.030573856 | 43146.172870467 | 0 | 0 | 0 | 0 | 0 | 0 | libaio |  |
 | /dev/vdb | randrw | 8 | 10s | 1 | 4K | 8 | 3651.105263 | 14604.421053 | 312 | 36674 | 7695.009920367 | 5345.517337829 | 3700.368421 | 14801.473684 | 688 | 43692 | 9686.040599157 | 5285.046210396 | libaio |  |
 | /dev/vdb | randrw | 8 | 10s | 1 | 4M | 8 | 184.05 | 758266.8 | 30318 | 413193 | 107105.41641122999 | 37697.093566174 | 188.55 | 776762.45 | 21229 | 1009750 | 230698.849119979 | 101526.879999234 | libaio |  |
+
+At the same time, read and write IOPS, bandwidth, and latency echarts will also be generated, thanks for the [go-echarts](https://github.com/go-echarts/go-echarts).
+<p align="center">
+    <img src="./assets/read-iops.png" alt="read-iops">
+</p>
+<p align="center">
+    <img src="./assets/write-iops.png" alt="write-iops">
+</p>
+<p align="center">
+    <img src="./assets/read-bandwidth.png" alt="read-bandwidth">
+</p>
+<p align="center">
+    <img src="./assets/write-bandwidth.png" alt="write-bandwidth">
+</p>
+<p align="center">
+    <img src="./assets/read-latency.png" alt="read-latency">
+</p>
+<p align="center">
+    <img src="./assets/write-latency.png" alt="write-latency">
+</p>
