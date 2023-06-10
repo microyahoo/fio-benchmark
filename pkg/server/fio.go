@@ -2,17 +2,11 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-echarts/go-echarts/v2/charts"
-	"github.com/go-echarts/go-echarts/v2/components"
-	"github.com/go-echarts/go-echarts/v2/opts"
-	"github.com/google/uuid"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"k8s.io/klog/v2"
 
@@ -130,135 +124,13 @@ func (s *FioServer) Run(stopCh <-chan struct{}) (err error) {
 		return err
 	}
 	s.printResults(s.outputFile, s.renderFormat)
-	s.renderCharts()
+	err = client.RenderCharts(s.results, s.settings.FioSettings.NumJobs, s.chartFile)
+	if err != nil {
+		klog.Warningf("Failed to render charts", err)
+		return err
+	}
 	// <-stopCh
 	return nil
-}
-
-func (s *FioServer) renderCharts() {
-	var jobMap = make(map[string]map[string]map[string]map[string][]*client.FioJob) // map[rw][iodepth][bs][numjobs] => []Job
-	for _, result := range s.results {
-		for _, job := range result.Jobs {
-			if _, ok1 := jobMap[job.JobOptions.RW]; !ok1 {
-				jobMap[job.JobOptions.RW] = make(map[string]map[string]map[string][]*client.FioJob)
-				jobMap[job.JobOptions.RW][job.JobOptions.IODepth] = make(map[string]map[string][]*client.FioJob)
-				jobMap[job.JobOptions.RW][job.JobOptions.IODepth][job.JobOptions.BlockSize] = make(map[string][]*client.FioJob)
-			} else {
-				if _, ok2 := jobMap[job.JobOptions.RW][job.JobOptions.IODepth]; !ok2 {
-					jobMap[job.JobOptions.RW][job.JobOptions.IODepth] = make(map[string]map[string][]*client.FioJob)
-					jobMap[job.JobOptions.RW][job.JobOptions.IODepth][job.JobOptions.BlockSize] = make(map[string][]*client.FioJob)
-				} else {
-					if _, ok3 := jobMap[job.JobOptions.RW][job.JobOptions.IODepth][job.JobOptions.BlockSize]; !ok3 {
-						jobMap[job.JobOptions.RW][job.JobOptions.IODepth][job.JobOptions.BlockSize] = make(map[string][]*client.FioJob)
-					}
-				}
-			}
-			jobMap[job.JobOptions.RW][job.JobOptions.IODepth][job.JobOptions.BlockSize][job.JobOptions.NumJobs] = append(
-				jobMap[job.JobOptions.RW][job.JobOptions.IODepth][job.JobOptions.BlockSize][job.JobOptions.NumJobs], job)
-		}
-	}
-
-	numJobs := s.settings.FioSettings.NumJobs
-	sort.Slice(numJobs, func(i, j int) bool { return numJobs[i] < numJobs[j] })
-
-	createLine := func(title string, yaxis string) *charts.Line {
-		line := charts.NewLine()
-		line.SetGlobalOptions(
-			charts.WithTitleOpts(opts.Title{
-				Title: title,
-			}),
-			charts.WithTooltipOpts(opts.Tooltip{Show: true}),
-			charts.WithLegendOpts(opts.Legend{Show: true, Width: "50%", Left: "right"}),
-			charts.WithInitializationOpts(opts.Initialization{
-				Theme: "shine",
-			}),
-			charts.WithXAxisOpts(opts.XAxis{
-				Name: "num_jobs",
-			}),
-			charts.WithYAxisOpts(opts.YAxis{
-				Name: yaxis,
-			}),
-		)
-		line.SetXAxis(numJobs)
-		return line
-	}
-
-	type metrics struct {
-		readIOPS  float64
-		readBw    float64
-		readLat   float64
-		writeIOPS float64
-		writeBw   float64
-		writeLat  float64
-	}
-	generateLines := func(lines []*charts.Line, metricsMap map[string][]*metrics) {
-		for filename, metrics := range metricsMap {
-			var (
-				readIOPSLineData  []opts.LineData
-				writeIOPSLineData []opts.LineData
-				readBwLineData    []opts.LineData
-				writeBwLineData   []opts.LineData
-				readLatLineData   []opts.LineData
-				writeLatLineData  []opts.LineData
-			)
-			for _, metric := range metrics {
-				readIOPSLineData = append(readIOPSLineData, opts.LineData{Value: metric.readIOPS})
-				writeIOPSLineData = append(writeIOPSLineData, opts.LineData{Value: metric.writeIOPS})
-				readBwLineData = append(readBwLineData, opts.LineData{Value: metric.readBw})
-				writeBwLineData = append(writeBwLineData, opts.LineData{Value: metric.writeBw})
-				readLatLineData = append(readLatLineData, opts.LineData{Value: metric.readLat})
-				writeLatLineData = append(writeLatLineData, opts.LineData{Value: metric.writeLat})
-			}
-			lineData := [][]opts.LineData{readIOPSLineData, writeIOPSLineData, readBwLineData, writeBwLineData, readLatLineData, writeLatLineData}
-			for i, line := range lines {
-				line.AddSeries(filename, lineData[i])
-			}
-		}
-	}
-	page := components.NewPage()
-	for rw, rwMap := range jobMap {
-		for iodepth, iodepthMap := range rwMap {
-			for bs, bsMap := range iodepthMap {
-				readIOPSLine := createLine(fmt.Sprintf("readiops-%s-%s-%s", rw, bs, iodepth), "iops")
-				writeIOPSLine := createLine(fmt.Sprintf("writeiops-%s-%s-%s", rw, bs, iodepth), "iops")
-				readBwLine := createLine(fmt.Sprintf("readbw-%s-%s-%s", rw, bs, iodepth), "bandwidth(KiB/s)")
-				writeBwLine := createLine(fmt.Sprintf("writebw-%s-%s-%s", rw, bs, iodepth), "bandwidth(KiB/s)")
-				readLatLine := createLine(fmt.Sprintf("readlat-%s-%s-%s(ms)", rw, bs, iodepth), "latency(ms)")
-				writeLatLine := createLine(fmt.Sprintf("writelat-%s-%s-%s(ms)", rw, bs, iodepth), "latency(ms)")
-
-				var filenameMap = make(map[string][]*metrics) // filename -> numJobs -> metrics
-				for _, numJob := range numJobs {
-					jobs := bsMap[fmt.Sprintf("%d", numJob)]
-					for _, job := range jobs {
-						filenameMap[job.JobOptions.FileName] = append(filenameMap[job.JobOptions.FileName], &metrics{
-							readIOPS:  job.ReadResult.IOPSMean,
-							readBw:    job.ReadResult.BWMean,
-							readLat:   job.ReadResult.LatencyNs.Mean / 1000 / 1000, // ms
-							writeIOPS: job.WriteResult.IOPSMean,
-							writeBw:   job.WriteResult.BWMean,
-							writeLat:  job.WriteResult.LatencyNs.Mean / 1000 / 1000, // ms
-						})
-					}
-				}
-				generateLines([]*charts.Line{readIOPSLine, writeIOPSLine, readBwLine, writeBwLine, readLatLine, writeLatLine}, filenameMap)
-				page.AddCharts(readIOPSLine, writeIOPSLine, readBwLine, writeBwLine, readLatLine, writeLatLine)
-			}
-		}
-	}
-	chartFile := s.chartFile
-	if chartFile == "" {
-		chartFile = fmt.Sprintf("chart-%s.html", uuid.NewString())
-	} else if !strings.HasSuffix(chartFile, "html") {
-		chartFile = fmt.Sprintf("%s.html", chartFile)
-	}
-	f, err := os.Create(chartFile)
-	if err != nil {
-		panic(err)
-	}
-	err = page.Render(f)
-	if err != nil {
-		klog.Warningf("Faied to render charts", err)
-	}
 }
 
 func (s *FioServer) doWork(settings *TestSettings) error {

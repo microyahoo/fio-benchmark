@@ -127,3 +127,8 @@ At the same time, read and write IOPS, bandwidth, and latency echarts will also 
 <p align="center">
     <img src="./assets/write-latency.png" alt="write-latency">
 </p>
+
+## Convert csv file to chart
+```
+bin/fio-benchmark generate-charts --csv-file examples/fio-benchmark-10.3.11.119.csv --chart-file chart.html
+```

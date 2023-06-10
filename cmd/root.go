@@ -51,7 +51,7 @@ func NewFioCommand() *cobra.Command {
 	cmds.Flags().StringVar(&o.chartFile, "chart-file", "", "echarts file for fio benchmark result")
 	cmds.Flags().BoolVar(&o.dryrun, "dryrun", true, "dry-run")
 
-	cmds.AddCommand(versionCmd)
+	cmds.AddCommand(versionCmd, chartsCmd)
 
 	return cmds
 }
