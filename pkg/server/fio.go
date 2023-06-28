@@ -142,6 +142,8 @@ func (s *FioServer) doWork(settings *TestSettings) error {
 	if len(workQueue.Queue) == 0 {
 		klog.Infof("There is no work need to do")
 		return nil
+	} else {
+		klog.Infof("There are %d devices need to run", len(workQueue.Queue))
 	}
 	numWorkers := int(settings.Workers)
 	if numWorkers > WorkersLimit {

@@ -25,6 +25,9 @@ type WorkItems []*WorkItem
 func (wis WorkItems) Do(executor exec.Executor, dryrun bool) ([]*client.FioResult, error) {
 	var results []*client.FioResult
 	for _, wi := range wis {
+		if e := client.DropCaches(executor); e != nil {
+			klog.Warningf("Failed to drop caches: %s", e)
+		}
 		result, err := client.FioTest(executor, wi.FileName, wi.NumJobs, wi.BlockSize, wi.IODepth, wi.RW, wi.Runtime, wi.IOEngine, wi.Verify, wi.Direct, dryrun)
 		if err != nil {
 			klog.Warningf("Failed to do fio test: %v", err)
@@ -84,6 +87,7 @@ func NewWorkQueue(s *TestSettings, executor exec.Executor) (*WorkQueue, error) {
 		if d.Type != sys.DiskType || d.Bus == sys.DiskBusUsb || d.IsRoot {
 			continue
 		}
+		klog.Infof("Found a new device: %s", d.RealPath)
 		var items []*WorkItem
 		for _, job := range fs.NumJobs {
 			for _, bs := range fs.BlockSize {

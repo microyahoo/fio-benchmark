@@ -57,6 +57,16 @@ func FioTest(executor exec.Executor, filename string, numJobs int32, bs string, 
 	return r, nil
 }
 
+func DropCaches(executor exec.Executor) error {
+	// echo	3 > /proc/sys/vm/drop_caches to clear PageCache, dentries and inodes
+	data := []byte("3")
+	err := os.WriteFile("/proc/sys/vm/drop_caches", data, 0)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 //	{
 //	  "fio version" : "fio-3.27",
 //	  "timestamp" : 1685782697,
@@ -408,7 +418,7 @@ func RenderCharts(results []*FioResult, numJobs []int32, chartFile string) error
 			charts.WithTitleOpts(opts.Title{
 				Title: title,
 			}),
-			charts.WithTooltipOpts(opts.Tooltip{Show: true}),
+			charts.WithTooltipOpts(opts.Tooltip{Show: true, TriggerOn: "mousemove|click"}),
 			charts.WithLegendOpts(opts.Legend{Show: true, Width: "50%", Left: "right"}),
 			charts.WithInitializationOpts(opts.Initialization{
 				Theme: "shine",
@@ -488,6 +498,152 @@ func RenderCharts(results []*FioResult, numJobs []int32, chartFile string) error
 	}
 	if chartFile == "" {
 		chartFile = fmt.Sprintf("chart-%s.html", uuid.NewString())
+	} else if !strings.HasSuffix(chartFile, "html") {
+		chartFile = fmt.Sprintf("%s.html", chartFile)
+	}
+	f, err := os.Create(chartFile)
+	if err != nil {
+		return err
+	}
+	err = page.Render(f)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func Render3DCharts(results []*FioResult, chartFile string) error {
+	var jobsMap = make(map[string]map[string]map[string]map[string]map[string]*FioJob) // map[rw][bs][iodepth][numjobs][filename]=> Job
+	for _, result := range results {
+		for _, job := range result.Jobs {
+			if _, ok1 := jobsMap[job.JobOptions.RW]; !ok1 {
+				jobsMap[job.JobOptions.RW] = make(map[string]map[string]map[string]map[string]*FioJob)
+				jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize] = make(map[string]map[string]map[string]*FioJob)
+				jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize][job.JobOptions.IODepth] = make(map[string]map[string]*FioJob)
+				jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize][job.JobOptions.IODepth][job.JobOptions.NumJobs] = make(map[string]*FioJob)
+			} else {
+				if _, ok2 := jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize]; !ok2 {
+					jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize] = make(map[string]map[string]map[string]*FioJob)
+					jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize][job.JobOptions.IODepth] = make(map[string]map[string]*FioJob)
+					jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize][job.JobOptions.IODepth][job.JobOptions.NumJobs] = make(map[string]*FioJob)
+				} else {
+					if _, ok3 := jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize][job.JobOptions.IODepth]; !ok3 {
+						jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize][job.JobOptions.IODepth] = make(map[string]map[string]*FioJob)
+						jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize][job.JobOptions.IODepth][job.JobOptions.NumJobs] = make(map[string]*FioJob)
+					} else {
+						if _, ok4 := jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize][job.JobOptions.IODepth][job.JobOptions.NumJobs]; !ok4 {
+							jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize][job.JobOptions.IODepth][job.JobOptions.NumJobs] = make(map[string]*FioJob)
+						}
+					}
+				}
+			}
+			jobsMap[job.JobOptions.RW][job.JobOptions.BlockSize][job.JobOptions.IODepth][job.JobOptions.NumJobs][job.JobOptions.FileName] = job
+		}
+	}
+
+	createLine := func(title string, zaxis string) *charts.Line3D {
+		line := charts.NewLine3D()
+		line.SetGlobalOptions(
+			charts.WithTitleOpts(opts.Title{
+				Title: title,
+			}),
+			charts.WithTooltipOpts(opts.Tooltip{Show: true, TriggerOn: "mousemove|click"}),
+			charts.WithLegendOpts(opts.Legend{Show: true, Width: "50%", Left: "right"}),
+			charts.WithInitializationOpts(opts.Initialization{
+				Theme: "shine",
+			}),
+			charts.WithVisualMapOpts(opts.VisualMap{
+				Calculable: true,
+			}),
+			charts.WithXAxisOpts(opts.XAxis{
+				Name: "num_jobs",
+			}),
+			charts.WithYAxisOpts(opts.YAxis{
+				Name: "iodepth",
+			}),
+			// charts.WithZAxisOpts(opts.ZAxis{
+			// 	Name: "iodepth",
+			// }),
+		)
+		// line.SetXAxis(numJobs)
+		return line
+	}
+
+	type metrics struct {
+		readIOPS  float64
+		readBw    float64
+		readLat   float64
+		writeIOPS float64
+		writeBw   float64
+		writeLat  float64
+	}
+	generateLines := func(lines []*charts.Line3D, metricsMap map[string]map[string]map[string]*metrics) { // filename -> iodepth -> numJobs -> metrics
+		for filename, iodepthMap := range metricsMap {
+			var (
+				readIOPSLineData  []opts.Chart3DData
+				writeIOPSLineData []opts.Chart3DData
+				readBwLineData    []opts.Chart3DData
+				writeBwLineData   []opts.Chart3DData
+				readLatLineData   []opts.Chart3DData
+				writeLatLineData  []opts.Chart3DData
+				lineData          [][]opts.Chart3DData
+			)
+			for iodepth, numJobsMap := range iodepthMap {
+				for numJobs, metrics := range numJobsMap {
+					readIOPSLineData = append(readIOPSLineData, opts.Chart3DData{Value: []interface{}{numJobs, iodepth, metrics.readIOPS}})
+					writeIOPSLineData = append(writeIOPSLineData, opts.Chart3DData{Value: []interface{}{numJobs, iodepth, metrics.writeIOPS}})
+					readBwLineData = append(readBwLineData, opts.Chart3DData{Value: []interface{}{numJobs, iodepth, metrics.readBw}})
+					writeBwLineData = append(writeBwLineData, opts.Chart3DData{Value: []interface{}{numJobs, iodepth, metrics.writeBw}})
+					readLatLineData = append(readLatLineData, opts.Chart3DData{Value: []interface{}{numJobs, iodepth, metrics.readLat}})
+					writeLatLineData = append(writeLatLineData, opts.Chart3DData{Value: []interface{}{numJobs, iodepth, metrics.writeLat}})
+
+				}
+			}
+			lineData = [][]opts.Chart3DData{readIOPSLineData, writeIOPSLineData, readBwLineData, writeBwLineData, readLatLineData, writeLatLineData}
+			for i, line := range lines {
+				line.AddSeries(filename, lineData[i])
+			}
+		}
+	}
+	page := components.NewPage()
+	for rw, bsMap := range jobsMap {
+		for bs, iodepthMap := range bsMap {
+			readIOPSLine := createLine(fmt.Sprintf("readIOPS-%s-%s", rw, bs), "iops")
+			writeIOPSLine := createLine(fmt.Sprintf("writeIOPS-%s-%s", rw, bs), "iops")
+			readBwLine := createLine(fmt.Sprintf("readBW-%s-%s", rw, bs), "bandwidth(KiB/s)")
+			writeBwLine := createLine(fmt.Sprintf("writeBW-%s-%s", rw, bs), "bandwidth(KiB/s)")
+			readLatLine := createLine(fmt.Sprintf("readLat-%s-%s", rw, bs), "latency(ms)")
+			writeLatLine := createLine(fmt.Sprintf("writeLat-%s-%s", rw, bs), "latency(ms)")
+
+			var filenameMap = make(map[string]map[string]map[string]*metrics) // filename -> iodepth -> numJobs -> metrics
+			for iodepth, numJobsMap := range iodepthMap {
+				for numJobs, jobMap := range numJobsMap {
+					for filename, job := range jobMap {
+						if _, ok := filenameMap[filename]; !ok {
+							filenameMap[filename] = make(map[string]map[string]*metrics)
+							filenameMap[filename][iodepth] = make(map[string]*metrics)
+						} else {
+							if _, ok2 := filenameMap[filename][iodepth]; !ok2 {
+								filenameMap[filename][iodepth] = make(map[string]*metrics)
+							}
+						}
+						filenameMap[filename][iodepth][numJobs] = &metrics{
+							readIOPS:  job.ReadResult.IOPSMean,
+							readBw:    job.ReadResult.BWMean,
+							readLat:   job.ReadResult.LatencyNs.Mean / 1000 / 1000, // ms
+							writeIOPS: job.WriteResult.IOPSMean,
+							writeBw:   job.WriteResult.BWMean,
+							writeLat:  job.WriteResult.LatencyNs.Mean / 1000 / 1000, // ms
+						}
+					}
+				}
+			}
+			generateLines([]*charts.Line3D{readIOPSLine, writeIOPSLine, readBwLine, writeBwLine, readLatLine, writeLatLine}, filenameMap)
+			page.AddCharts(readIOPSLine, writeIOPSLine, readBwLine, writeBwLine, readLatLine, writeLatLine)
+		}
+	}
+	if chartFile == "" {
+		chartFile = fmt.Sprintf("3dchart-%s.html", uuid.NewString())
 	} else if !strings.HasSuffix(chartFile, "html") {
 		chartFile = fmt.Sprintf("%s.html", chartFile)
 	}
