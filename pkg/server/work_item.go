@@ -87,6 +87,10 @@ func NewWorkQueue(s *TestSettings, executor exec.Executor) (*WorkQueue, error) {
 		if d.Type != sys.DiskType || d.Bus == sys.DiskBusUsb || d.IsRoot {
 			continue
 		}
+		if !d.Empty || d.HasChildren {
+			klog.Infof("Skip non-empty device %s", d.RealPath)
+			continue
+		}
 		klog.Infof("Found a new device: %s", d.RealPath)
 		var items []*WorkItem
 		for _, job := range fs.NumJobs {
